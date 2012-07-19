@@ -173,6 +173,13 @@ void GLUtils::checkEglError(const char* op, EGLBoolean returnVal)
 bool GLUtils::checkGlError(const char* op)
 {
     bool ret = false;
+    if(strcmp(op,"deleteUnusedTextures")==0 ||
+        strcmp(op,"cleanupGLResources()")==0 ||
+        strcmp(op,"TilesManager::cleanupGLResources")==0 ||
+        strcmp(op,"TilesManager::getMaxTextureAllocation")==0 ||
+        strcmp(op,"At the end of blitTileFromQueue()")==0) {
+        return ret;
+    }
     for (GLint error = glGetError(); error; error = glGetError()) {
 #ifndef DEBUG
         if (allowGLLog())
