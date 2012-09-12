@@ -6,6 +6,9 @@
  * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies)
+ * Copyright (c) 2011, 2012 Code Aurora Forum. All rights reserved
+ * Copyright (C) 2011, 2012 Sony Ericsson Mobile Communications AB
+ * Copyright (C) 2012 Sony Mobile Communcations AB
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -1040,6 +1043,15 @@ public:
     void initializeWMLPageState();
 #endif
     
+#if ENABLE(WEBGL) && PLATFORM(ANDROID)
+    void setContainsWebGLContent(bool value) { m_containsWebGLContent = value; }
+    bool containsWebGLContent() const { return m_containsWebGLContent; }
+    void suspendDocument();
+    void resumeDocument();
+    void registerForDocumentSuspendCallbacks(Element*);
+    void unregisterForDocumentSuspendCallbacks(Element*);
+#endif
+
     bool containsValidityStyleRules() const { return m_containsValidityStyleRules; }
     void setContainsValidityStyleRules() { m_containsValidityStyleRules = true; }
 
@@ -1090,8 +1102,8 @@ public:
     const DocumentTiming* timing() const { return &m_documentTiming; }
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
-    int webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>, Element*);
-    void webkitCancelRequestAnimationFrame(int id);
+    int webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
+    void webkitCancelAnimationFrame(int id);
     void serviceScriptedAnimations(DOMTimeStamp);
 #endif
 
@@ -1101,6 +1113,12 @@ public:
     void initDNSPrefetch();
 
     ContentSecurityPolicy* contentSecurityPolicy() { return m_contentSecurityPolicy.get(); }
+
+    int getNumExternalJs() const { return m_externalJs; }
+    void incrementNumExternalJs() { m_externalJs++; }
+
+    bool doObjectPrefetch() const { return m_doObjPrfth; }
+    bool doJsCssPrefetch() const { return m_doJsCssPrfth; }
 
 protected:
     Document(Frame*, const KURL&, bool isXHTML, bool isHTML);
@@ -1376,6 +1394,11 @@ private:
     bool m_containsWMLContent;
 #endif
 
+#if ENABLE(WEBGL) && PLATFORM(ANDROID)
+    bool m_containsWebGLContent;
+    HashSet<Element*> m_documentSuspendCallbackElements;
+#endif
+
     RefPtr<DocumentWeakReference> m_weakReference;
 
     HashSet<MediaCanStartListener*> m_mediaCanStartListeners;
@@ -1402,6 +1425,10 @@ private:
     bool m_writeRecursionIsTooDeep;
     unsigned m_writeRecursionDepth;
 
+    int m_externalJs;
+    bool m_doObjPrfth;
+    bool m_doJsCssPrfth;
+
 #if ENABLE(REQUEST_ANIMATION_FRAME)
     OwnPtr<ScriptedAnimationController> m_scriptedAnimationController;
 #endif
@@ -1420,8 +1447,11 @@ inline Node::Node(Document* document, ConstructionType type)
     : m_document(document)
     , m_previous(0)
     , m_next(0)
+    , m_prefetch(0)
     , m_renderer(0)
     , m_nodeFlags(type)
+    , m_previousNode(0)
+    , m_nextNode(0)
 {
     if (m_document)
         m_document->guardRef();

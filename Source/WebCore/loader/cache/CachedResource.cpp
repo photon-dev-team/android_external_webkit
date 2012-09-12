@@ -4,6 +4,7 @@
     Copyright (C) 2002 Waldo Bastian (bastian@kde.org)
     Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
     Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+    Copyright (c) 2011, 2012 Code Aurora Forum. All rights reserved
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
@@ -31,6 +32,7 @@
 #include "CachedResourceHandle.h"
 #include "CachedResourceLoader.h"
 #include "CachedResourceRequest.h"
+#include "CrossOriginAccessControl.h"
 #include "Frame.h"
 #include "FrameLoaderClient.h"
 #include "KURL.h"
@@ -43,6 +45,9 @@
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
+#include <wtf/text/CString.h>
+
+#include <StatHubCmdApi.h>
 
 using namespace WTF;
 
@@ -62,7 +67,11 @@ static ResourceLoadPriority defaultPriorityForResourceType(CachedResource::Type 
         case CachedResource::ImageResource:
             return ResourceLoadPriorityLow;
 #if ENABLE(LINK_PREFETCH)
-        case CachedResource::LinkResource:
+        case CachedResource::LinkPrefetch:
+            return ResourceLoadPriorityVeryLow;
+        case CachedResource::LinkPrerender:
+            return ResourceLoadPriorityVeryLow;
+        case CachedResource::LinkSubresource:
             return ResourceLoadPriorityVeryLow;
 #endif
     }
@@ -74,8 +83,8 @@ static ResourceLoadPriority defaultPriorityForResourceType(CachedResource::Type 
 static RefCountedLeakCounter cachedResourceLeakCounter("CachedResource");
 #endif
 
-CachedResource::CachedResource(const String& url, Type type)
-    : m_url(url)
+CachedResource::CachedResource(const ResourceRequest& request, Type type)
+    : m_resourceRequest(request)
     , m_request(0)
     , m_loadPriority(defaultPriorityForResourceType(type))
     , m_responseTimestamp(currentTime())
@@ -108,6 +117,7 @@ CachedResource::CachedResource(const String& url, Type type)
 #ifndef NDEBUG
     cachedResourceLeakCounter.increment();
 #endif
+    m_statHubHash = StatHubHash(url().string().latin1().data());
 }
 
 CachedResource::~CachedResource()
@@ -166,6 +176,26 @@ void CachedResource::error(CachedResource::Status status)
 void CachedResource::finish()
 {
     m_status = Cached;
+    if (m_statHubHash) {
+        UrlProperty urlProperty;
+        urlProperty.bf.cacheable = canUseCacheValidator();
+        urlProperty.bf.mime_type = (unsigned int) type();
+        StatHubCmd(INPUT_CMD_WK_RES_LOAD_FINISHED, (void*)m_statHubHash, 0,
+                   (void*) urlProperty.value, 0);
+    }
+}
+
+void CachedResource::setInCache(bool inCache) {
+    m_inCache = inCache;
+    if (m_statHubHash) {
+        StatHubCmd(INPUT_CMD_WK_RES_MMC_STATUS, (void*)m_statHubHash, 0, (void*)m_inCache, 0);
+    }
+}
+
+bool CachedResource::passesAccessControlCheck(SecurityOrigin* securityOrigin)
+{
+    String errorDescription;
+    return WebCore::passesAccessControlCheck(m_response, resourceRequest().allowCookies(), securityOrigin, errorDescription);
 }
 
 bool CachedResource::isExpired() const
